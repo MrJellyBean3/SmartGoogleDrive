@@ -16,16 +16,31 @@ import numpy as np
 
 #Custom modules imports
 import sys
-sys.path.append(r'..\custom_files')
-import adictionary_functions as adf
-import asmart_functions as asf
+sys.path.append('smartdrivefunctions')
+import dictionary_functions as adf
+dictionaries_folder_path="dictionaries"
+structure_dictionary_path=dictionaries_folder_path+"/structure_dictionary.yaml"
+information_dictionary_path=dictionaries_folder_path+"/information_dictionary.yaml"
+folder_dictionary_path=dictionaries_folder_path+"/folder_dictionary.yaml"
+adf.dictionaries_folder_path=dictionaries_folder_path
+adf.structure_dictionary_path=structure_dictionary_path
+adf.information_dictionary_path=information_dictionary_path
+adf.folder_dictionary_path=folder_dictionary_path
+import smart_functions as asf
+asf.dictionaries_folder_path=dictionaries_folder_path
+asf.structure_dictionary_path=structure_dictionary_path
+asf.information_dictionary_path=information_dictionary_path
+asf.folder_dictionary_path=folder_dictionary_path
+
+
+
 from deferred_imports import load_slow_imports
 threading.Thread(target=load_slow_imports).start()
 
 #Openai imports and key
 import openai
 import os
-with open("..\SECRET.txt",'r') as f:
+with open("SECRET.txt",'r') as f:
     OPENAI_SECRET=f.read().split("\n")[0]
 os.environ['OPENAI_API_KEY'] = OPENAI_SECRET
 openai.api_key=OPENAI_SECRET
@@ -75,7 +90,7 @@ def record_audio(return_queue):
         print("Recording Finished")
         recorder.delete()
         t_start=time.time()
-        audio_file= open("audio_recording.wav", "rb")
+        audio_file= open(path, "rb")
         transcript = openai.Audio.transcribe("whisper-1", audio_file)
         t_end=time.time()
         print("Time to transcribe: ",t_end-t_start, " Text:",transcript["text"])
@@ -295,29 +310,12 @@ class App:
             print("Finished updating everything")
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 def call_asyn_dict_updates(select_string):
     #Get creds
-    with open('token.pickle', 'rb') as token:
-        creds = pickle.load(token)
+    creds = None
+    if os.path.exists('token.pickle'):
+        with open('token.pickle', 'rb') as token:
+            creds = pickle.load(token)
     secret_path="sgd_secret.json"
     if not creds or not creds.valid or creds.expired:
         SCOPES = ['https://www.googleapis.com/auth/spreadsheets','https://www.googleapis.com/auth/drive.readonly', 'https://www.googleapis.com/auth/documents.readonly']

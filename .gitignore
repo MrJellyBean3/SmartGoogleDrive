@@ -1,0 +1,10 @@
+env
+information_db
+folder_db
+combined_db
+dictionaries
+token.pickle
+SECRET.txt
+sgd_secret.json
+audio_recording.wav
+smartdrivefunctions/__pycache__

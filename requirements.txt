@@ -1,0 +1,12 @@
+pvrecorder
+numpy
+openai
+google-auth-oauthlib
+aiohttp
+PyYAML
+langchain
+PyDrive
+google-api-python-client
+chromadb
+tiktoken
+pandas
