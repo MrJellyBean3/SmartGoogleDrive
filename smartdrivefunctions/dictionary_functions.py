@@ -1,9 +1,3 @@
-# Drive Imports
-dictionaries_folder_path=""
-structure_dictionary_path=""
-information_dictionary_path=""
-folder_dictionary_path=""
-
 import os
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
@@ -16,9 +10,20 @@ import asyncio
 import time
 import yaml
 
+# Global Variables:
+dictionaries_folder_path=""
+structure_dictionary_path=""
+information_dictionary_path=""
+folder_dictionary_path=""
 BASE_URL = 'https://www.googleapis.com/drive/v3/files'
 
-#Structure Dictionary
+
+# Format date
+def format_date(date_str):
+    return date_str.split("T")[0] + " " + date_str.split("T")[-1].split("Z")[0]
+
+
+# Get Drive structure
 async def structure_dictionary_iterable(token, file_list=None, path=""):
     if file_list is None and path == "":
         file_list = await list_files(token, 'root')
@@ -39,6 +44,7 @@ async def structure_dictionary_iterable(token, file_list=None, path=""):
         contents_dict.update(result)
 
     return contents_dict
+# Open folder in creating structure 
 async def process_folder(token, item, path):
     print(item['name'], item['mimeType'], item['id'])
     new_files_list = await list_files(token, item['id'])
@@ -53,6 +59,7 @@ async def process_folder(token, item, path):
             "contents": contents
         }
     }
+# Open file in creating structure 
 async def process_file(token, item, path):
     print(item['name'], item['mimeType'], item['id'])
     if "shortcut" in item['mimeType']:
@@ -80,8 +87,7 @@ async def process_file(token, item, path):
                 "path": path
             }
         }
-def format_date(date_str):
-    return date_str.split("T")[0] + " " + date_str.split("T")[-1].split("Z")[0]
+
 
 async def list_files(token, parent_id):
     params = {
@@ -115,7 +121,7 @@ async def fetch_metadata(token, file_id):
 
 
 
-
+# Create Information Dictionary containing all file contents
 async def information_dictionary_iterable(creds, input_dict, information_dict=None):
     if information_dict is None:
         information_dict = {}
@@ -131,8 +137,7 @@ async def information_dictionary_iterable(creds, input_dict, information_dict=No
     await asyncio.gather(*tasks)
 
     return information_dict
-
-
+# Open file to pass file information into information dictionary
 async def information_process_file(creds, key, value, information_dict):
     file_id = value["id"]
     if file_id not in information_dict:
@@ -157,8 +162,7 @@ async def information_process_file(creds, key, value, information_dict):
             "path": value["path"],
             "content": await get_content_based_on_type(creds, value),
         })
-
-
+# Get content based on type
 async def get_content_based_on_type(creds,file_meta):
     if "document" in file_meta["mimeType"]:
         print("Document ", file_meta["id"])
@@ -170,6 +174,8 @@ async def get_content_based_on_type(creds,file_meta):
         return None
     
 
+
+# Create Folder Dictionary containing all folder information
 def generate_folder_dictionary(structure_dict, information_dict,folder_dict=None):
     if folder_dict is None:
         folder_dict = {}
@@ -216,37 +222,28 @@ def generate_folder_dictionary(structure_dict, information_dict,folder_dict=None
 
 
 
-
-
-
-
-# Use this function to initiate the process
-def check_for_coroutines(obj, path=""):
-    if asyncio.iscoroutinefunction(obj) or asyncio.iscoroutine(obj):
-        print(f"Found coroutine at path: {path}")
-    elif isinstance(obj, dict):
-        for key, value in obj.items():
-            new_path = path + f"[{repr(key)}]"
-            check_for_coroutines(key, new_path + " (key)")
-            check_for_coroutines(value, new_path)
-    elif isinstance(obj, list):
-        for idx, item in enumerate(obj):
-            check_for_coroutines(item, path + f"[{idx}]")
-
-
+# Main function
 async def main(creds, processes_to_run):
+    # Get paths
     global dictionaries_folder_path, structure_dictionary_path, information_dictionary_path, folder_dictionary_path
+
+    # Get token
+    YOUR_TOKEN = creds.token
+
+    # Check if dictionaries folder exists
     if not os.path.isdir(dictionaries_folder_path):
         os.mkdir(dictionaries_folder_path)
-    YOUR_TOKEN = creds.token
+
+    # Structure dictionary creation
     if "structure" in processes_to_run:
-        #Run structure dictionary creation
         file_structure = await structure_dictionary_iterable(YOUR_TOKEN)
         with open(structure_dictionary_path, 'w') as outfile:
             yaml.dump(file_structure, outfile, default_flow_style=False)
         print("Finished Structure Dictionary Creation")
+    
+    # Information and Folder dictionary creation
     if "information" in processes_to_run:
-        #Run information dictionary creation
+        #Information dictionary
         with open(structure_dictionary_path, 'r') as file:
             structure_dictionary = yaml.load(file, Loader=yaml.FullLoader)
         if os.path.exists(information_dictionary_path):
@@ -255,12 +252,12 @@ async def main(creds, processes_to_run):
         else:
             information_dict = None
         information_dict = await information_dictionary_iterable(creds,structure_dictionary,information_dict)
-        check_for_coroutines(information_dict)
         with open(information_dictionary_path, 'w') as outfile:
             yaml.dump(information_dict, outfile, default_flow_style=False)
         print("Finished Information Dictionary Creation")
 
-        #Run folder creation
+
+        # Run folder creation
         with open(structure_dictionary_path, "r") as file:
             structure_dictionary = yaml.load(file, Loader=yaml.FullLoader)
         with open(information_dictionary_path, "r") as file:

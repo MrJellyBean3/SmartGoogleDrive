@@ -1,12 +1,10 @@
-print("import begin")
-import time
-t_s_abs=time.time()
+# Drive Imports
 import yaml
 import asyncio
 from deferred_imports import langchain, imports_done
 import webbrowser
-print("import end: ",time.time()-t_s_abs)
-# Drive Imports
+
+# Global Variables
 dictionaries_folder_path=""
 structure_dictionary_path=""
 information_dictionary_path=""
@@ -29,6 +27,10 @@ async def a_update_mapping(your_dictionary,override=False):
         your_dictionary[id]['mappedDate'] = your_dictionary[id]['modifiedDate']
 
     return your_dictionary
+
+
+
+# Information Mapping
 async def a_generate_mapping(content,title,parent,id):
     imports_done.wait()
     from langchain.chat_models import ChatOpenAI
@@ -127,7 +129,12 @@ async def a_update_folder_mapping(folder_dictionary,information_dictionary,overr
             folder_dictionary[id]['mappedDate'] = folder_dictionary[id]['modifiedDate']
     return(folder_dictionary)
 
+
+
+
+# Folder Mapping
 async def a_generate_folder_mapping(contents,title,parent,id):
+    # Setup imports
     imports_done.wait()
     from langchain.chat_models import ChatOpenAI
     from langchain.prompts.chat import (
@@ -135,6 +142,7 @@ async def a_generate_folder_mapping(contents,title,parent,id):
         SystemMessagePromptTemplate,
         HumanMessagePromptTemplate,
     )
+
     # Define the templates
     system_template="I want you to give a summary of the of the folder the user gives you as if you were describing it and what it is for, the user will also tell you the path of the parent directory of the folder, the folder title, and the descriptions of the contents of the files or folders the folder contains which you should use to understand what the description should be."
     human_template="Here is my folder title-{title}, with parent directory-{parent}, and here are the contents of the folder:\n{contents}"
@@ -149,7 +157,7 @@ async def a_generate_folder_mapping(contents,title,parent,id):
     message_list=[system_message,human_message,system_message2]
     chat_prompt=ChatPromptTemplate.from_messages(message_list)
 
-    # Generate the mapping
+    # Get the response of the mapping for the item
     formated_prompt=chat_prompt.format_prompt(contents=contents, title=title, parent=parent).to_messages()
     raw_string_prompt=""
     for item in formated_prompt:
@@ -171,17 +179,20 @@ async def a_generate_folder_mapping(contents,title,parent,id):
 
 
 
+
 # Generate Mappings
 def map(override=False):
+    # Setup dictionary paths
     global dictionaries_folder_path, structure_dictionary_path, information_dictionary_path, folder_dictionary_path
-    #map information
+
+    # map information dictionary
     with open(information_dictionary_path, "r") as file:
             information_dict = yaml.load(file, Loader=yaml.FullLoader)
     information_dict=asyncio.run(a_update_mapping(information_dict,override=override))
     with open(information_dictionary_path, 'w') as outfile:
         yaml.dump(information_dict, outfile)
 
-    #map the folders
+    # Map the folder dictionary
     with open(information_dictionary_path, "r") as file:
             information_dict = yaml.load(file, Loader=yaml.FullLoader)
     with open(folder_dictionary_path, "r") as file:
@@ -194,25 +205,14 @@ def map(override=False):
 
 
 
-
-
-
 # Update Database
 def update_vectordb(persist_directory,finish_que):
+    # Setup imports
     imports_done.wait()
     from langchain.vectorstores import Chroma
     from langchain.embeddings import OpenAIEmbeddings
-    #read from information dictionary
-    global dictionaries_folder_path, structure_dictionary_path, information_dictionary_path, folder_dictionary_path
-    print(information_dictionary_path)
-    print("FD:",folder_dictionary_path)
-    if "information" in persist_directory:
-        base_dict_file_name=information_dictionary_path
-    elif "folder" in persist_directory:
-        base_dict_file_name=folder_dictionary_path
-    with open(base_dict_file_name) as f:
-        base_dict = yaml.load(f, Loader=yaml.FullLoader)
-    #Create custom documents
+
+    # Create custom Document class
     class Document:
         def __init__(self, page_content="",source="",dict_id="",mimeType="",title=""):
             self.page_content = page_content
@@ -220,17 +220,27 @@ def update_vectordb(persist_directory,finish_que):
         def __repr__(self):
             attributes = ", ".join(f"{k}={v!r}" for k, v in vars(self).items())
             return f"Document({attributes})"
-    #Create list of documents
+
+    # Read from information dictionary
+    global dictionaries_folder_path, structure_dictionary_path, information_dictionary_path, folder_dictionary_path
+    if "information" in persist_directory:
+        base_dict_file_name=information_dictionary_path
+    elif "folder" in persist_directory:
+        base_dict_file_name=folder_dictionary_path
+    with open(base_dict_file_name) as f:
+        base_dict = yaml.load(f, Loader=yaml.FullLoader)
+
+    # Create list of documents
     my_documents = []
     for key in list(base_dict.keys()):
         if base_dict[key]["path"]=="":
             my_documents.append(Document(base_dict[key]["mapping"],source=base_dict[key]["path"]+"none id:"+base_dict[key]["id"]+":mimeType:"+base_dict[key]["mimeType"], dict_id=base_dict[key]["id"],mimeType=base_dict[key]["mimeType"],title=base_dict[key]["title"]))
         else:
             my_documents.append(Document(base_dict[key]["mapping"],source=base_dict[key]["path"]+" id:"+base_dict[key]["id"]+":mimeType:"+base_dict[key]["mimeType"], dict_id=base_dict[key]["id"],mimeType=base_dict[key]["mimeType"],title=base_dict[key]["title"]))
-    #Delete and regenerate the database
+    
+    # Delete and regenerate the database
     embedding = OpenAIEmbeddings(model="text-embedding-ada-002")
-    vectordb = Chroma(persist_directory=persist_directory, 
-                    embedding_function=embedding)
+    vectordb = Chroma(persist_directory=persist_directory, embedding_function=embedding)
     try:
         vectordb.delete_collection()
         vectordb.persist()
@@ -243,19 +253,22 @@ def update_vectordb(persist_directory,finish_que):
     )
     vectordb.persist()
     vectordb = None
+
+    # Depricated queue usage
     finish_que.put(True)
 
+
+
+
+# Make Vector Database with files and folders
 def combine_vectordb(persist_directory):
+    #Setup imports and paths
     imports_done.wait()
     from langchain.vectorstores import Chroma
     from langchain.embeddings import OpenAIEmbeddings
     global dictionaries_folder_path, structure_dictionary_path, information_dictionary_path, folder_dictionary_path
-    #read from information dictionary
-    with open(information_dictionary_path) as f:
-        information_dict = yaml.load(f, Loader=yaml.FullLoader)
-    with open(folder_dictionary_path) as f:
-        folder_dict = yaml.load(f, Loader=yaml.FullLoader)
-    #Create custom documents
+    
+    # Create custom Document class
     class Document:
         def __init__(self, page_content="",source="",dict_id="",mimeType="",title=""):
             self.page_content = page_content
@@ -263,7 +276,8 @@ def combine_vectordb(persist_directory):
         def __repr__(self):
             attributes = ", ".join(f"{k}={v!r}" for k, v in vars(self).items())
             return f"Document({attributes})"
-    #Create list of documents
+        
+    # Dicitonary to list of documents function
     def add_documents(base_dict):
         my_documents = []
         for key in list(base_dict.keys()):
@@ -272,11 +286,19 @@ def combine_vectordb(persist_directory):
             else:
                 my_documents.append(Document(base_dict[key]["mapping"],source=base_dict[key]["path"]+" id:"+base_dict[key]["id"]+":mimeType:"+base_dict[key]["mimeType"], dict_id=base_dict[key]["id"],mimeType=base_dict[key]["mimeType"],title=base_dict[key]["title"]))
         return(my_documents)
+
+    # Read from information and folder dictionaries
+    with open(information_dictionary_path) as f:
+        information_dict = yaml.load(f, Loader=yaml.FullLoader)
+    with open(folder_dictionary_path) as f:
+        folder_dict = yaml.load(f, Loader=yaml.FullLoader)
+    
+    # Turn dictionaries into document list
     my_documents=add_documents(information_dict)+add_documents(folder_dict)
-    #Delete and regenerate the database
+
+    # Delete and regenerate the combined_db database
     embedding = OpenAIEmbeddings(model="text-embedding-ada-002")
-    vectordb = Chroma(persist_directory=persist_directory, 
-                    embedding_function=embedding)
+    vectordb = Chroma(persist_directory=persist_directory, embedding_function=embedding)
     try:
         vectordb.delete_collection()
         vectordb.persist()
@@ -291,23 +313,25 @@ def combine_vectordb(persist_directory):
     vectordb = None
     print("Finished combining databases")
 
+
+
+
 # Retrieve From Information
 def retrieve_from_information(user_question,return_que):
+    # Setup imports
     imports_done.wait()
     from langchain.vectorstores import Chroma
     from langchain.embeddings import OpenAIEmbeddings
+
     # Get vectordb
-    #persist_directory = 'information_db'
     persist_directory = 'combined_db'
     embedding = OpenAIEmbeddings(model="text-embedding-ada-002")
-    vectordb = Chroma(persist_directory=persist_directory, 
-                    embedding_function=embedding)
+    vectordb = Chroma(persist_directory=persist_directory, embedding_function=embedding)
     
-    #Setup retriever
-    retriever = vectordb.as_retriever(search_kwargs={"k": 5,"score_threshold":0.65},search_type="similarity_score_threshold")#,score_threshold=0.2)#,verbose=True)
-
-    #docs = retriever.get_relevant_documents(user_question)
+    # Retrive documents
     docs_and_scores = vectordb.similarity_search_with_score(user_question)
+
+    # Get docs from docs_and_scores
     docs=[]
     scores=[]
     for item in docs_and_scores:
@@ -315,34 +339,31 @@ def retrieve_from_information(user_question,return_que):
         scores.append(item[1])
     print(scores)
 
+    # Open the website for the first doc
     open_website(docs[0])
-    # if len(docs)==0:
-    #     print("No documents found")
-    # else:
-    #     if "spreadsheet" in docs[0].metadata["mimeType"]:
-    #         url = "https://docs.google.com/spreadsheets/d/"+docs[0].metadata["id"]
-    #     elif "document" in docs[0].metadata["mimeType"]:
-    #         url = "https://docs.google.com/document/d/"+docs[0].metadata["id"]
-    #     elif "folder" in docs[0].metadata["mimeType"]:
-    #         url = "https://drive.google.com/drive/folders/"+docs[0].metadata["id"]
-    #     print(url)
-    #     webbrowser.open(url)
-    #print("Putting Docs in Queue",docs)
+
+    # Pass the docs to the main app
     return_que.put(docs)
 
+
+
+
+# Retrieve From Folder
 def retrieve_from_folder(user_question):
+    # Setup imports
     imports_done.wait()
     from langchain.vectorstores import Chroma
     from langchain.embeddings import OpenAIEmbeddings
+
+    # Get vectordb
     persist_directory = 'folder_db'
     embedding = OpenAIEmbeddings(model="text-embedding-ada-002")
-    vectordb = Chroma(persist_directory=persist_directory, 
-                    embedding_function=embedding)
-    #Setup retriever
-    retriever = vectordb.as_retriever(search_kwargs={"k": 6,"score_threshold":0.65},search_type="similarity_score_threshold")#,score_threshold=0.2)#,verbose=True)
-    #docs = retriever.get_relevant_documents(user_question)
+    vectordb = Chroma(persist_directory=persist_directory, embedding_function=embedding)
 
+    # Retrive documents
     docs_and_scores = vectordb.similarity_search_with_score(user_question)
+
+    # Get docs from docs_and_scores
     docs=[]
     scores=[]
     for item in docs_and_scores:
@@ -350,14 +371,12 @@ def retrieve_from_folder(user_question):
         scores.append(item[1])
     print(scores)
 
-    if len(docs)==0:
-        print("No documents found")
-    else:
-        url = "https://drive.google.com/drive/folders/"+docs[0].metadata["id"]
-        print(url)
-        webbrowser.open(url)
+    # Open the website for the first doc
+    open_website(docs[0])
 
 
+
+# Opens website of a document
 def open_website(doc):
     if doc==None:
         print("No documents found")
@@ -373,165 +392,3 @@ def open_website(doc):
         if url != None:
             webbrowser.open(url)
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# if __name__=="__main__":
-#     import openai
-#     import os
-#     with open("..\SECRET.txt",'r') as f:
-#         OPENAI_SECRET=f.read().split("\n")[0]
-#     os.environ['OPENAI_API_KEY'] = OPENAI_SECRET
-#     openai.api_key=OPENAI_SECRET
-#     information_dict_file_name="ainformation_dictionary.yaml"
-#     with open(information_dict_file_name, "r") as file:
-#             information_dict = yaml.load(file, Loader=yaml.FullLoader)
-#     with open("afolder_dictionary.yaml", "r") as file:
-#         folder_dictionary = yaml.load(file, Loader=yaml.FullLoader)
-#     folder_dictionary=asyncio.run(a_update_folder_mapping(folder_dictionary,information_dict,override=True))
-#     with open("afolder_dictionary.yaml", 'w') as outfile:
-#         yaml.dump(folder_dictionary, outfile)
-
-
-
-
-
-
-
-
-
-
-# if __name__=="__main__":
-#     import openai
-#     import os
-#     with open("..\SECRET.txt",'r') as f:
-#         OPENAI_SECRET=f.read().split("\n")[0]
-#     os.environ['OPENAI_API_KEY'] = OPENAI_SECRET
-#     openai.api_key=OPENAI_SECRET
-#     combine_vectordb("combined_db")
-
-
-
-
-
-
-
-
-
-
-
-
-
-# if __name__=="__main__":
-#     from langchain.schema import (
-#         AIMessage,
-#         HumanMessage,
-#         SystemMessage
-#     )
-#     import openai
-#     import os
-#     with open("..\SECRET.txt",'r') as f:
-#         OPENAI_SECRET=f.read().split("\n")[0]
-#     os.environ['OPENAI_API_KEY'] = OPENAI_SECRET
-#     openai.api_key=OPENAI_SECRET
-#     from langchain.chat_models import ChatOpenAI
-#     import time
-#     t_start=time.time()
-#     chat=ChatOpenAI(model="gpt-3.5-turbo",temperature=0.3)
-#     content_string="""Give me a 1 sentence description of this: "The learning environment for an expert must be stable and non random, have timely feedback, allow for many repetitions of a task, and the expert must practice deliberately. 
-#     Valid environment
-#     Non random space with patterns to learn
-#     Timely feedback
-#     Have to have quick feedback in order to map the inputs to the outputs and find patterns
-#     Without quick feedback details are lost and the guesses will become more random
-#     Repetition
-#     Seeing or doing something 1 time is not sufficient to learn
-#     Actively practicing and going through the patterns repeatedly is the only way to learn
-#     Deliberate
-#     Doing the same tasks you have always done does not make you better and you might forget some of the tasks you have done before but aren't doing anymore
-#     Have to push yourself to do the things that are difficult and out of your comfort zone
-#     Thousands of hours of practice
-
-#     These ideas fit in line with my idea that your capacities now represent what you have been doing for the last several years of your life, more strongly represented by what you have done recently but the idea of accumulated functional capacity with exponential decay of acquired traits. "
-# """
-#     response=chat([HumanMessage(content=content_string)])
-#     t_end=time.time()
-#     print(t_end-t_start)
-#     print(response)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# if __name__=="__main__":
-#     import together
-#     import time
-#     together_model_name="togethercomputer/llama-2-13b-chat"
-#     together_model_name="togethercomputer/llama-2-7b-chat"
-#     together_model_name="togethercomputer/llama-2-70b-chat"
-#     together_model_name="togethercomputer/falcon-7b-instruct"
-#     together.api_key = "cbed566397ee1f046d11392aa4400b2b11ae75de02655b8ebd95e110b2a26161"
-#     model_list = together.Models.list()
-#     for m in model_list:
-#         if "display_type" in m.keys():
-#             if m["display_type"]=="chat":
-#                 print(m["name"])
-#     content_string="""Give me a 3 word description of this: "The learning environment for an expert must be stable and non random, have timely feedback, allow for many repetitions of a task, and the expert must practice deliberately. 
-#     Valid environment
-#     Non random space with patterns to learn
-#     Timely feedback
-#     Have to have quick feedback in order to map the inputs to the outputs and find patterns
-#     Without quick feedback details are lost and the guesses will become more random
-#     Repetition
-#     Seeing or doing something 1 time is not sufficient to learn
-#     Actively practicing and going through the patterns repeatedly is the only way to learn
-#     Deliberate
-#     Doing the same tasks you have always done does not make you better and you might forget some of the tasks you have done before but aren't doing anymore
-#     Have to push yourself to do the things that are difficult and out of your comfort zone
-#     Thousands of hours of practice
-
-#     These ideas fit in line with my idea that your capacities now represent what you have been doing for the last several years of your life, more strongly represented by what you have done recently but the idea of accumulated functional capacity with exponential decay of acquired traits." Start your 3 word description here:\n
-# """ 
-#     #please translate this
-#     #content_string="Can dogs fly, yes or no?"
-#     t_start=time.time()
-#     together_output=together.Complete.create(
-#         content_string,
-#         model=together_model_name,
-#         max_tokens=512,
-#         temperature=0.7,
-#         )
-#     t_end=time.time()
-#     print(t_end-t_start)
-#     print(together_output["output"]["choices"][0]["text"])

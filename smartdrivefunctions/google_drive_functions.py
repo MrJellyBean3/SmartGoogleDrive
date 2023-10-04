@@ -11,6 +11,8 @@ import asyncio
 from concurrent.futures import ThreadPoolExecutor
 executor = ThreadPoolExecutor(max_workers=5)
 
+
+
 # Get information from google sheets
 async def get_from_sheets(creds, sheet_id):
     sheet_service = build('sheets', 'v4', credentials=creds)
@@ -30,6 +32,9 @@ def fetch_sheet_content(sheet_service,sheet_id):
         print(err)
     return(content)
 
+
+
+# Get information from google docs
 async def get_from_docs(creds, doc_id):
     docs_service = build('docs', 'v1', credentials=creds)
     # Use the run_in_executor method to run the fetch_doc_content function

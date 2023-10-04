@@ -2,11 +2,25 @@ import time
 if __name__=="__main__":
     t_s_abs=time.time()
 
-#tkinter imports
+# tkinter imports
 import threading
 import tkinter as tk
 from tkinter import StringVar, Entry, Label, Button
 import queue
+
+
+# Custom modules imports
+import sys
+sys.path.append('smartdrivefunctions')
+from deferred_imports import load_slow_imports
+
+# Start slow imports in background
+threading.Thread(target=load_slow_imports).start()
+
+import dictionary_functions as adf
+import smart_functions as asf
+
+
 
 # Sound recording
 from pvrecorder import PvRecorder
@@ -14,28 +28,25 @@ import wave, struct
 import time
 import numpy as np
 
-#Custom modules imports
-import sys
-sys.path.append('smartdrivefunctions')
-import dictionary_functions as adf
+
+# Define paths
 dictionaries_folder_path="dictionaries"
 structure_dictionary_path=dictionaries_folder_path+"/structure_dictionary.yaml"
 information_dictionary_path=dictionaries_folder_path+"/information_dictionary.yaml"
 folder_dictionary_path=dictionaries_folder_path+"/folder_dictionary.yaml"
+
+# Update paths in dictionary_functions
 adf.dictionaries_folder_path=dictionaries_folder_path
 adf.structure_dictionary_path=structure_dictionary_path
 adf.information_dictionary_path=information_dictionary_path
 adf.folder_dictionary_path=folder_dictionary_path
-import smart_functions as asf
+
+# Update paths in smart_functions
 asf.dictionaries_folder_path=dictionaries_folder_path
 asf.structure_dictionary_path=structure_dictionary_path
 asf.information_dictionary_path=information_dictionary_path
 asf.folder_dictionary_path=folder_dictionary_path
 
-
-
-from deferred_imports import load_slow_imports
-threading.Thread(target=load_slow_imports).start()
 
 #Openai imports and key
 import openai
@@ -55,47 +66,6 @@ from google.auth.transport.requests import Request
 from google_auth_oauthlib.flow import InstalledAppFlow
 
 
-# Record audio
-def record_audio(return_queue):
-    recorder = PvRecorder(device_index=0, frame_length=512)
-    audio = []
-    path = 'audio_recording.wav'
-    stop_recording=False
-    avg_loudness=0
-    t_start=time.time()
-    tlt_100=time.time()
-    try:
-        recorder.start()
-        print("Starting Recording")
-        while True:
-            frame = recorder.read()
-            avg_loudness+=np.mean(np.abs(frame))*0.3
-            avg_loudness*=0.7
-            print("Average Loudness: ", avg_loudness,"     ", end='\r')
-            audio.extend(frame)
-            if (time.time()-t_start)>1.0:
-                if avg_loudness<120:
-                    if (time.time()-tlt_100)>0.35:
-                        raise KeyboardInterrupt
-                else:
-                    tlt_100=time.time()
-            else:
-                tlt_100=time.time()
-    except KeyboardInterrupt:
-        recorder.stop()
-        with wave.open(path, 'w') as f:
-            f.setparams((1, 2, 16000, 512, "NONE", "NONE"))
-            f.writeframes(struct.pack("h" * len(audio), *audio))
-    finally:
-        print("Recording Finished")
-        recorder.delete()
-        t_start=time.time()
-        audio_file= open(path, "rb")
-        transcript = openai.Audio.transcribe("whisper-1", audio_file)
-        t_end=time.time()
-        print("Time to transcribe: ",t_end-t_start, " Text:",transcript["text"])
-        return_queue.put(transcript["text"])
-        return(transcript["text"])
 
 
 #Main Tkinter App
@@ -111,22 +81,29 @@ class App:
         self.start_recording_thread=False
         self.vector_update_statuses=[False,False]
 
+
+
         # Entry to get user input
         self.entry = Entry(self.root)
         self.entry.pack(pady=20)
 
+        #Shows you when you are recording
         def change_dot_color(self):
             self.recording_dot["fg"]="red"
             self.start_recording_thread=True
+        
+        # Rotates the retrieved docs
         def rotate_options(self):
             if len(self.docs_list)!=0:
                 self.doc_index%=len(self.docs_list)
                 asf.open_website(self.docs_list[self.doc_index])
                 self.doc_index+=1
 
+
+
         # ACTIONS
         # Button to record and retrieve
-        self.btn_start_recording = Button(root, text="Record Retrieve Info",command=lambda: change_dot_color(self))#command=lambda: self.start_thread("record_retrieve_information"),)
+        self.btn_start_recording = Button(root, text="Record Retrieve Info",command=lambda: change_dot_color(self))
         self.btn_start_recording.pack(pady=10)
 
         # Button to record and retrieve from folders
@@ -140,7 +117,6 @@ class App:
         # Index through options
         self.btn_rotate = Button(root, text="Rotate through options", command=lambda: rotate_options(self))
         self.btn_rotate.pack(pady=10)
-
 
 
 
@@ -173,9 +149,15 @@ class App:
         self.btn_vdb_update["state"]="disabled" 
         self.btn_vdb_update["text"]="Update VectorDB (Disabled)"
 
+        # Button to update everything toggled off by default
+        self.btn_everything_update = Button(root, text="Update Everything", command=lambda: self.start_thread("update_everything"))
+        self.btn_everything_update.pack(pady=10)
+        self.btn_everything_update["state"]="disabled"
+        self.btn_everything_update["text"]="Update Everything (Disabled)"
 
 
 
+        # Displays
         # Label to display the result
         self.result_var = StringVar()
         self.result_var.set("Result will be displayed here...")
@@ -186,8 +168,10 @@ class App:
         color_dark_red="#690000"
         self.recording_dot=Label(root, text="●", fg=color_dark_red, font=("Helvetica", 100))
         self.recording_dot.pack(side="bottom", anchor="se")
-        
-        #Get boot time
+
+
+
+        # Get boot time
         global t_s_abs
         print("Time to initialize: ",time.time()-t_s_abs)
 
@@ -197,7 +181,6 @@ class App:
     def check_queue(self):
         # Make large red dot while recording
         if self.start_recording_thread==True:
-            print("Starting recording")
             self.start_recording_thread=False
             self.start_thread("record_retrieve_information")
         
@@ -210,25 +193,6 @@ class App:
             except queue.Empty:
                 #print("Result queue is empty.")
                 pass
-
-        #get status of vectordb updates
-        if hasattr(self,"finish_info_que"):
-            try:
-                result = self.finish_info_que.get(0)
-                self.vector_update_statuses[1]=result
-                delattr(self, "finish_info_que")
-            except queue.Empty:
-                pass
-        if hasattr(self,"finish_folder_que"):
-            try:
-                result = self.finish_folder_que.get(0)
-                self.vector_update_statuses[0]=result
-                delattr(self, "finish_folder_que")
-            except queue.Empty:
-                pass
-        if self.vector_update_statuses[0]==True and self.vector_update_statuses[1]==True:
-            self.vector_update_statuses=[False,False]
-            threading.Thread(target=asf.combine_vectordb,args=("combined_db",)).start()
 
         # If no result yet, continue checking
         self.root.after(100, self.check_queue)
@@ -247,6 +211,7 @@ class App:
         flip_toggle(self.btn_info_update)
         flip_toggle(self.btn_map_update)
         flip_toggle(self.btn_vdb_update)
+        flip_toggle(self.btn_everything_update)
 
     def start_thread(self,process_name):
         user_input = self.entry.get()
@@ -257,6 +222,7 @@ class App:
             threading.Thread(target=asf.retrieve_from_information,args=(user_input,return_que,)).start()
             self.q.put(return_que)
         elif process_name=="record_retrieve_information":
+            self.doc_index=1
             return_que_record=queue.Queue()
             rt=threading.Thread(target=record_audio, args=(return_que_record,))
             rt.start()
@@ -284,32 +250,70 @@ class App:
         elif process_name=="update_mapping":
             threading.Thread(target=asf.map).start()
         elif process_name=="update_vectordb":
-            self.finish_info_que=queue.Queue()
-            self.finish_folder_que=queue.Queue()
-            threading.Thread(target=asf.update_vectordb,args=("information_db",self.finish_info_que)).start()
-            threading.Thread(target=asf.update_vectordb,args=("folder_db",self.finish_folder_que)).start()
+            threading.Thread(target=asf.update_vectordb,args=("information_db")).start()
+            threading.Thread(target=asf.update_vectordb,args=("folder_db")).start()
+            threading.Thread(target=asf.combine_vectordb,args=("combined_db",)).start()
         elif process_name=="update_everything":
-            su=threading.Thread(target=call_asyn_dict_updates,args=("structure",))
-            su.start()
-            su.join()
-            iu=threading.Thread(target=call_asyn_dict_updates,args=("information",))
-            iu.start()
-            iu.join()
-            mu=threading.Thread(target=asf.map)
-            mu.start()
-            mu.join()
-            viu=threading.Thread(target=asf.update_vectordb,args=("information_db",))
-            viu.start()
-            viu.join()
-            vfu=threading.Thread(target=asf.update_vectordb,args=("folder_db",))
-            vfu.start()
-            vfu.join()
-            vcu=threading.Thread(target=asf.combine_vectordb,args=("combined_db",))
-            vcu.start()
-            vcu.join()
-            print("Finished updating everything")
+            threading.Thread(target=update_everything_function).start()
 
 
+
+
+# Record audio
+def record_audio(return_queue):
+    recorder = PvRecorder(device_index=0, frame_length=512)
+    audio = []
+    path = 'audio_recording.wav'
+    avg_loudness=0
+    t_start=time.time()
+    tlt_100=time.time()
+    try:
+        # Start recording
+        recorder.start()
+        print("Starting Recording")
+        while True:
+            # Get audio frame
+            frame = recorder.read()
+            audio.extend(frame)
+
+            # Calculate average loudness
+            avg_loudness+=np.mean(np.abs(frame))*0.3
+            avg_loudness*=0.7
+            print("Average Loudness: ", avg_loudness,"     ", end='\r')
+
+            # If the average loudness is below 120 for 0.35 seconds after 1 second, stop recording
+            if (time.time()-t_start)>1.0:
+                if avg_loudness<120:
+                    if (time.time()-tlt_100)>0.35:
+                        raise KeyboardInterrupt
+                else:
+                    tlt_100=time.time()
+            else:
+                tlt_100=time.time()
+    except KeyboardInterrupt:
+        # Stop recording and save to file
+        recorder.stop()
+        with wave.open(path, 'w') as f:
+            f.setparams((1, 2, 16000, 512, "NONE", "NONE"))
+            f.writeframes(struct.pack("h" * len(audio), *audio))
+        recorder.delete()
+        print("Recording Finished")
+    finally:
+        # Transcribe audio
+        t_start=time.time()
+        audio_file= open(path, "rb")
+        transcript = openai.Audio.transcribe("whisper-1", audio_file)
+        t_end=time.time()
+        print("Time to transcribe: ",t_end-t_start, " Text:",transcript["text"])
+
+        # Return transcript to main thread to display and for functions
+        return_queue.put(transcript["text"])
+        return(transcript["text"])
+
+
+
+
+# Update dictionaries
 def call_asyn_dict_updates(select_string):
     #Get creds
     creds = None
@@ -333,27 +337,13 @@ def call_asyn_dict_updates(select_string):
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+# Update everything
+def update_everything_function():
+    call_asyn_dict_updates("structure")
+    call_asyn_dict_updates("information")
+    asf.map()
+    asf.combine_vectordb("combined_db")
+    print("Finished updating everything")
 
 
 
